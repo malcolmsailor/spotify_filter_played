@@ -17,6 +17,9 @@ import traceback
 from pathlib import Path
 from urllib.request import urlopen
 
+import backoff
+import httpx
+import pydantic
 import pytz
 import tekore as tk
 
@@ -84,7 +87,7 @@ formatter = logging.Formatter(
 stdout_handler.setFormatter(formatter)
 stderr_handler.setFormatter(formatter)
 
-# Add the handler to your logger
+# Add the handler to logger
 LOGGER.addHandler(stdout_handler)
 LOGGER.addHandler(stderr_handler)
 
@@ -171,10 +174,7 @@ def add_new_playlist(s):
 
 def get_tz_offset():
     return (
-        datetime.datetime.utcnow()
-        .astimezone()
-        .utcoffset()
-        .total_seconds()  # type:ignore
+        datetime.datetime.utcnow().astimezone().utcoffset().total_seconds()  # type:ignore
     )
 
 
@@ -313,7 +313,8 @@ def get_playlist_tracks(
         tracks = s.tracks(raw_track_ids, market="from_token")
 
     all_tracks: dict[str, tuple[tk.model.FullPlaylistTrack, str]] = {
-        t.id: (t, raw_id) for t, raw_id in zip(tracks, raw_track_ids)  # type:ignore
+        t.id: (t, raw_id)
+        for t, raw_id in zip(tracks, raw_track_ids)  # type:ignore
     }
 
     playlist_data = {"snapshot_id": playlist.snapshot_id, "all_tracks": all_tracks}
@@ -322,6 +323,20 @@ def get_playlist_tracks(
     return playlist_data["all_tracks"]
 
 
+@backoff.on_exception(
+    backoff.expo,
+    (
+        tk.InternalServerError,
+        tk.BadGateway,
+        httpx.RemoteProtocolError,
+        httpx.ProxyError,
+        httpx.ConnectError,
+        httpx.ReadTimeout,
+        pydantic.ValidationError,
+        tk.ServiceUnavailable,
+    ),
+    max_tries=3,
+)
 def process(
     s: tk.Spotify,
     recent_tracks: dict[str, tuple[tk.model.FullTrack, datetime.datetime]],
@@ -331,8 +346,17 @@ def process(
     dst_name,
 ):
     LOGGER.info(f"Processing src={src_name} dst={dst_name}")
-    src_playlist = s.playlist(src_id)
-    dst_playlist = s.playlist(dst_id)
+    try:
+        src_playlist = s.playlist(src_id)
+    except Exception as e:
+        LOGGER.error(f"Error reading source playlist {src_name}: {e}")
+        return
+    try:
+        dst_playlist = s.playlist(dst_id)
+    except Exception as e:
+        LOGGER.error(f"Error reading destination playlist {dst_name}: {e}")
+        return
+
     assert isinstance(src_playlist, tk.model.FullPlaylist)
     assert isinstance(dst_playlist, tk.model.FullPlaylist)
     reinit_time, prev_dst_ids = read_mem(dst_id)
@@ -401,7 +425,8 @@ def process(
     if len(dst_tracks) - len(to_remove) == 0:
         LOGGER.info(f"Re-initializing {dst_playlist.name}")
         src_uris = [
-            t.track.uri for t in s.all_items(src_playlist.tracks)  # type:ignore
+            t.track.uri
+            for t in s.all_items(src_playlist.tracks)  # type:ignore
         ]
         for i in range(0, len(src_uris), 100):
             s.playlist_add(dst_id, src_uris[i : i + 100])
@@ -410,13 +435,25 @@ def process(
         # They're definitely not my local time zone, but tk.model.Timestamp.tzname()
         # and related methods return None
         reinit_time = datetime.datetime.utcnow()
+        # This seems to have changed in more recent version of tekore
+        # reinit_time = datetime.datetime.now()
 
     # write dst memory
     write_mem(dst_id, to_save, reinit_time)
 
 
-def main():
-    args = get_args()
+@backoff.on_exception(
+    backoff.expo,
+    (
+        tk.InternalServerError,
+        tk.BadGateway,
+        httpx.RemoteProtocolError,
+        httpx.ConnectError,
+        httpx.ReadTimeout,
+    ),
+    max_tries=3,
+)
+def main(args):
     if args.debug:
         sys.excepthook = custom_excepthook
 
@@ -452,37 +489,8 @@ def main():
 
 
 if __name__ == "__main__":
-    for attempt in range(NUM_ATTEMPTS):
-        try:
-            main()
-        except SystemExit:  # when calling with --help
-            break
-        except Exception as e:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            try:
-                assert exc_type.__module__ in (
-                    "httpcore",
-                    "httpx",
-                    "socket",
-                    "tekore",
-                    "tk",
-                )
-            except:
-                # There is an Attribute Error that gets raised when the
-                #   http connection is closed but isn't open; I'm having trouble
-                #   reproducing it but hopefully this will handle it.
-                assert exc_value is not None
-                assert any("no attribute 'CLOSED'" in arg for arg in exc_value.args)
-            if attempt + 1 == NUM_ATTEMPTS:
-                if not os.path.exists(LAST_SUCCESS) or (
-                    os.stat(LAST_SUCCESS).st_mtime
-                    + MAX_INTERVAL_IN_SECS_BETWEEN_SUCCESSES
-                    < time.time()
-                ):
-                    LOGGER.info("Timeout or other internet error, aborting")
-                    raise
-            LOGGER.error(e)
-            LOGGER.info("Timeout or other internet error, trying again")
-            time.sleep(WAIT_BETWEEN_ATTEMPTS)
-        else:
-            break
+    args = args = get_args()
+    try:
+        main(args)
+    except Exception as exc:
+        LOGGER.error(f"{str(type(exc))}: {str(exc)}")
