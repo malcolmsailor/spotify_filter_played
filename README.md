@@ -27,7 +27,7 @@ I solved this problem for myself, but I needed to write a Python script to do so
 
 # Usage
 
-In order to use the script, you'll need to create a Spotify "App" which allows you to access the Spotify API in order to control your Spotify account. You'll find directions for doing so [here](https://developer.spotify.com/documentation/web-api/concepts/apps).
+In order to use the script, you'll need to create a Spotify "App" which allows you to access the Spotify API in order to control your Spotify account. You'll find directions for doing so [here](https://developer.spotify.com/documentation/web-api/concepts/apps). Note: you need to add `https://example.com/callback` to the "redirect URIs" section in the application settings.
 
 To launch the script, run `python spotify_filter_played.py`. When the script, it will prompt you for a few pieces of information.
 
