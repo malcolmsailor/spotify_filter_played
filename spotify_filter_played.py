@@ -12,6 +12,7 @@ import pdb
 import pickle
 import re
 import sys
+import textwrap
 import time
 import traceback
 from pathlib import Path
@@ -207,6 +208,12 @@ def get_args():
         "-n",
         action="store_true",
         help="add new playlist",
+    )
+    parser.add_argument(
+        "--delete-playlist",
+        "-d",
+        action="store_true",
+        help="delete playlist",
     )
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
@@ -442,6 +449,45 @@ def process(
     write_mem(dst_id, to_save, reinit_time)
 
 
+def delete_playlist():
+    if os.path.exists(PLAYLIST_JSON):
+        with open(PLAYLIST_JSON, "r", encoding="utf-8") as inf:
+            playlists = json.load(inf)
+    else:
+        print("No playlists to delete")
+        return
+
+    for i, (src_name, src_id, dst_name, dst_id) in enumerate(playlists, start=1):
+        print(
+            "\n".join(
+                textwrap.wrap(
+                    f" {i:2d}: Source: {src_name} -> Destination: {dst_name}",
+                    width=os.get_terminal_size().columns,
+                    subsequent_indent="    ",
+                )
+            )
+        )
+    while True:
+        selected_i = input(
+            "Enter the number of the playlist to delete (or leave blank to cancel): "
+        )
+        if selected_i.strip() == "":
+            return
+        try:
+            selected_i = int(selected_i)
+        except ValueError:
+            print("Invalid input, please enter a number")
+            continue
+        if 1 <= selected_i <= len(playlists):
+            break
+        else:
+            print("Invalid input, please enter a number within the range")
+
+    playlists = playlists[: selected_i - 1] + playlists[selected_i:]
+    with open(PLAYLIST_JSON, "w", encoding="utf-8") as outf:
+        json.dump(playlists, outf)
+
+
 @backoff.on_exception(
     backoff.expo,
     (
@@ -456,6 +502,10 @@ def process(
 def main(args):
     if args.debug:
         sys.excepthook = custom_excepthook
+
+    if args.delete_playlist:
+        delete_playlist()
+        return
 
     client_id, client_secret, user_token = init_auth(args.reauthenticate)
     app_token = tk.request_client_token(client_id, client_secret)
