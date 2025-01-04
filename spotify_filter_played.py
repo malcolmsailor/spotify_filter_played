@@ -13,7 +13,6 @@ import pickle
 import re
 import sys
 import textwrap
-import time
 import traceback
 from pathlib import Path
 from urllib.request import urlopen
@@ -32,9 +31,9 @@ DATA_DIR = os.getenv(
 
 def internet_on():
     try:
-        response = urlopen("https://www.google.com/", timeout=10)
+        urlopen("https://www.google.com/", timeout=10)
         return True
-    except:
+    except Exception:  # pylint: disable=broad-except
         return False
 
 
