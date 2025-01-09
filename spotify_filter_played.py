@@ -173,9 +173,7 @@ def add_new_playlist(s):
 
 
 def get_tz_offset():
-    return (
-        datetime.datetime.utcnow().astimezone().utcoffset().total_seconds()  # type:ignore
-    )
+    return datetime.datetime.now(datetime.UTC).astimezone().utcoffset().total_seconds()
 
 
 def read_playlists(s, add_new) -> list[tuple[str, str, str, str]]:
@@ -440,7 +438,7 @@ def process(
         # I believe the timestamps of recently played tracks are utc
         # They're definitely not my local time zone, but tk.model.Timestamp.tzname()
         # and related methods return None
-        reinit_time = datetime.datetime.utcnow()
+        reinit_time = datetime.datetime.now(datetime.UTC)
         # This seems to have changed in more recent version of tekore
         # reinit_time = datetime.datetime.now()
 
