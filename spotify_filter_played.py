@@ -53,6 +53,7 @@ PLAYLIST_DIR = os.path.join(DATA_DIR, "playlists")
 AUTH_CONFIG = os.path.join(DATA_DIR, "auth.cfg")
 
 LAST_SUCCESS = os.path.join(DATA_DIR, "last_success")
+LAST_COMPLETED_RUN = os.path.join(DATA_DIR, "last_completed_run")
 PLAYLIST_JSON = os.path.join(DATA_DIR, "playlist_util.json")
 PLAYLIST_MEM_DIR = os.path.join(DATA_DIR, "playlist_mem")
 REMOVED_FROM_SRC = os.path.join(DATA_DIR, "removed_from_src.csv")
@@ -141,7 +142,7 @@ def add_new_playlist(s):
         source_id = m.group("id")
         try:
             source_playlist = s.playlist(source_id)
-        except:
+        except Exception:
             print("Error reading source playlist")
         else:
             while True:
@@ -161,7 +162,7 @@ def add_new_playlist(s):
                 dest_id = m.group("id")
                 try:
                     dest_playlist = s.playlist(dest_id)
-                except:
+                except Exception:
                     print("Error reading destination playlist")
                 else:
                     return (
@@ -421,7 +422,7 @@ def process(
     to_remove += deleted
     if to_remove:
         LOGGER.info(
-            f"Removing {len(to_remove)} tracks from destination playlist " f"{dst_name}"
+            f"Removing {len(to_remove)} tracks from destination playlist {dst_name}"
         )
         s.playlist_remove(dst_id, [f"spotify:track:{id_}" for id_ in to_remove])
 
@@ -485,6 +486,21 @@ def delete_playlist():
         json.dump(playlists, outf)
 
 
+def _get_last(path):
+    if not os.path.exists(path):
+        return float("-inf")
+    else:
+        return os.stat(path).st_mtime
+
+
+def get_last_success():
+    return _get_last(LAST_SUCCESS)
+
+
+def get_last_completed_run():
+    return _get_last(LAST_COMPLETED_RUN)
+
+
 @backoff.on_exception(
     backoff.expo,
     (
@@ -510,10 +526,7 @@ def main(args):
     s.token = user_token
     playlists = read_playlists(s, args.new_playlist)
     recent_tracks = get_recent_tracks(s)
-    if not os.path.exists(LAST_SUCCESS):
-        last_success = float("-inf")
-    else:
-        last_success = os.stat(LAST_SUCCESS).st_mtime
+    last_success = get_last_success()
     if not recent_tracks:
         if not args.debug:
             LOGGER.info("No recently-played tracks, exiting")
@@ -540,4 +553,22 @@ if __name__ == "__main__":
     try:
         main(args)
     except Exception as exc:
-        LOGGER.error(f"{str(type(exc))}: {str(exc)}")
+        import time
+
+        last_completed_run = get_last_completed_run()
+        now = time.time()
+        max_days_without_completed_run = 1
+        days_without_completed_run = (now - last_completed_run) / (24 * 60 * 60)
+        if days_without_completed_run > max_days_without_completed_run:
+            LOGGER.error(f"{str(type(exc))}: {str(exc)}")
+            LOGGER.error(
+                f"Script has not completed in {days_without_completed_run:.1f} days"
+            )
+            raise
+        else:
+            LOGGER.info(f"{str(type(exc))}: {str(exc)}")
+            LOGGER.info(
+                f"Script has completed in the last {days_without_completed_run:.1f} days"
+            )
+    else:
+        Path(LAST_COMPLETED_RUN).touch()
