@@ -354,12 +354,12 @@ def process(
     try:
         src_playlist = s.playlist(src_id)
     except Exception as e:
-        LOGGER.error(f"Error reading source playlist {src_name}: {e}")
+        LOGGER.info(f"Error reading source playlist {src_name}: {e}")
         return
     try:
         dst_playlist = s.playlist(dst_id)
     except Exception as e:
-        LOGGER.error(f"Error reading destination playlist {dst_name}: {e}")
+        LOGGER.info(f"Error reading destination playlist {dst_name}: {e}")
         return
 
     assert isinstance(src_playlist, tk.model.FullPlaylist)
