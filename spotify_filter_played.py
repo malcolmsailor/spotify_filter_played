@@ -562,13 +562,14 @@ if __name__ == "__main__":
         if days_without_completed_run > max_days_without_completed_run:
             LOGGER.error(f"{str(type(exc))}: {str(exc)}")
             LOGGER.error(
-                f"Script has not completed in {days_without_completed_run:.1f} days"
+                f"{__file__} has not completed in {days_without_completed_run:.1f} days"
             )
             raise
         else:
             LOGGER.info(f"{str(type(exc))}: {str(exc)}")
             LOGGER.info(
-                f"Script has completed in the last {days_without_completed_run:.1f} days"
+                f"{__file__} has completed in the last {days_without_completed_run:.1f} days"
             )
     else:
         Path(LAST_COMPLETED_RUN).touch()
+        LOGGER.info(f"{__file__} completed successfully")
