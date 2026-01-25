@@ -214,6 +214,11 @@ def get_args():
         help="delete playlist",
     )
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--force-run",
+        action="store_true",
+        help="run unconditionally, even if most recently-played tracks are older than last run",
+    )
     args = parser.parse_args()
     return args
 
@@ -424,7 +429,12 @@ def process(
         LOGGER.info(
             f"Removing {len(to_remove)} tracks from destination playlist {dst_name}"
         )
-        s.playlist_remove(dst_id, [f"spotify:track:{id_}" for id_ in to_remove])
+        chunk_size = 25
+        for i in range(0, len(to_remove), chunk_size):
+            s.playlist_remove(
+                dst_id,
+                [f"spotify:track:{id_}" for id_ in to_remove[i : i + chunk_size]],
+            )
 
     # If dst is now empty, rebuild it
     if len(dst_tracks) - len(to_remove) == 0:
@@ -537,9 +547,15 @@ def main(args):
     # Actually now most_recent_timestamp seems to be local time. Not sure if this
     #   is an update in Tekore or what.
     if most_recent_timestamp < last_success:
-        if not args.debug:
+        if not args.debug and not args.force_run:
+            t1 = datetime.datetime.fromtimestamp(most_recent_timestamp).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            t2 = datetime.datetime.fromtimestamp(last_success).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             LOGGER.info(
-                "Most recently-played track is older than last time script ran successfully, exiting"
+                f"Most recently-played track ({t1}) is older than last time script ran successfully ({t2}), exiting"
             )
             return
     LOGGER.info(f"Found {len(playlists)} playlist pairs")
